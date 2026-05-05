@@ -21,6 +21,10 @@
       --accent: #2563eb;
       --accent-soft: #eff6ff;
       --today: #fef3c7;
+      --saturday: #fef2f7;
+      --sunday: #fce4ec;
+      --saturday-num: #ec4899;
+      --sunday-num: #be185d;
     }
 
     body {
@@ -79,6 +83,28 @@
       border: 1px solid var(--border);
     }
 
+    .month-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .month-toggle button {
+      background: var(--surface);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .month-toggle button.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
     .status {
       padding: 16px;
       background: var(--accent-soft);
@@ -115,6 +141,20 @@
       background: var(--today);
     }
 
+    .event.saturday {
+      background: var(--saturday);
+    }
+
+    .event.sunday {
+      background: var(--sunday);
+    }
+
+    /* 오늘이면서 토/일요일인 경우 — 오늘 색이 우선 */
+    .event.today.saturday,
+    .event.today.sunday {
+      background: var(--today);
+    }
+
     .event-date {
       font-size: 13px;
       color: var(--text-muted);
@@ -130,6 +170,20 @@
     }
 
     .event.today .event-date .day-num {
+      color: var(--accent);
+    }
+
+    .event.saturday .event-date .day-num {
+      color: var(--saturday-num);
+    }
+
+    .event.sunday .event-date .day-num {
+      color: var(--sunday-num);
+    }
+
+    /* 오늘이면서 토/일요일인 경우 — 오늘 색이 우선 */
+    .event.today.saturday .event-date .day-num,
+    .event.today.sunday .event-date .day-num {
       color: var(--accent);
     }
 
@@ -211,6 +265,10 @@
     </div>
 
     <div id="events-area" style="display:none;">
+      <div class="month-toggle">
+        <button id="btn-this-month" class="active">이번달</button>
+        <button id="btn-next-month">다음달</button>
+      </div>
       <div id="events-list" class="events-list"></div>
     </div>
 
@@ -296,23 +354,44 @@
       document.getElementById('events-area').style.display = 'none';
       document.getElementById('signoutBtn').style.display = 'none';
       document.getElementById('events-list').innerHTML = '';
+      // 버튼 상태 초기화
+      currentMonthOffset = 0;
+      document.getElementById('btn-this-month').classList.add('active');
+      document.getElementById('btn-next-month').classList.remove('active');
       hideStatus();
     });
 
     // ===== 일정 로드 =====
+    let currentMonthOffset = 0; // 0=이번달, 1=다음달
+
+    document.getElementById('btn-this-month').addEventListener('click', () => {
+      setActiveMonth(0);
+    });
+    document.getElementById('btn-next-month').addEventListener('click', () => {
+      setActiveMonth(1);
+    });
+
+    function setActiveMonth(offset) {
+      currentMonthOffset = offset;
+      document.getElementById('btn-this-month').classList.toggle('active', offset === 0);
+      document.getElementById('btn-next-month').classList.toggle('active', offset === 1);
+      loadEvents();
+    }
+
     async function loadEvents() {
       hideStatus();
       const now = new Date();
       const year = now.getFullYear();
-      const month = now.getMonth(); // 0-indexed
+      const month = now.getMonth() + currentMonthOffset; // 0-indexed, offset 적용
 
-      // 이번 달 첫째 날 / 다음 달 첫째 날 (시간 = 00:00:00 로컬)
+      // 해당 달 첫째 날 / 다음 달 첫째 날 (Date 객체가 자동으로 연도 넘김 처리)
       const timeMin = new Date(year, month, 1).toISOString();
       const timeMax = new Date(year, month + 1, 1).toISOString();
 
-      // 헤더에 월 표시
+      // 헤더에 월 표시 (실제 연/월 계산)
+      const targetDate = new Date(year, month, 1);
       document.getElementById('monthLabel').textContent =
-        year + '년 ' + (month + 1) + '월';
+        targetDate.getFullYear() + '년 ' + (targetDate.getMonth() + 1) + '월';
 
       let events;
       try {
@@ -360,7 +439,12 @@
         const isToday = (dayKey === todayKey);
 
         const row = document.createElement('div');
-        row.className = 'event' + (isToday ? ' today' : '');
+        const dayOfWeek = startDate.getDay();
+        let rowClass = 'event';
+        if (isToday) rowClass += ' today';
+        if (dayOfWeek === 6) rowClass += ' saturday';
+        if (dayOfWeek === 0) rowClass += ' sunday';
+        row.className = rowClass;
 
         const dayNum = startDate.getDate();
         const wd = weekdayKo[startDate.getDay()];
