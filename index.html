@@ -225,6 +225,20 @@
       font-weight: 400;
     }
 
+    .event-sep {
+      color: #d1d5db;
+      margin: 0 6px;
+      font-weight: 300;
+    }
+
+    .event-inline-time {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      margin-right: 4px;
+      font-weight: 400;
+    }
+
     .event-empty {
       padding: 10px 16px;
       text-align: center;
@@ -474,18 +488,30 @@
            + (weekEnd.getMonth() + 1) + '월 ' + weekEnd.getDate() + '일';
     }
 
-    // ===== 단일 이벤트 row 생성 (컴팩트 3-컬럼) =====
-    function buildEventRow(ev, todayKey, weekdayKo) {
-      const start = ev.start.dateTime || ev.start.date;
-      const isAllDay = !ev.start.dateTime;
-      const startDate = new Date(start);
+    // ===== 날짜 키 헬퍼 =====
+    function dayKeyOf(date) {
+      return date.getFullYear() + '-' + (date.getMonth()+1) + '-' + date.getDate();
+    }
 
-      const dayKey = startDate.getFullYear() + '-' + (startDate.getMonth()+1) + '-' + startDate.getDate();
-      const isToday = (dayKey === todayKey);
-      const dayOfWeek = startDate.getDay();
+    // ===== 시간 포맷팅 헬퍼 =====
+    function formatEventTime(ev) {
+      const isAllDay = !ev.start.dateTime;
+      if (isAllDay) return '종일';
+      const startDate = new Date(ev.start.dateTime);
+      const sh = String(startDate.getHours()).padStart(2, '0');
+      const sm = String(startDate.getMinutes()).padStart(2, '0');
+      return sh + ':' + sm;
+    }
+
+    // ===== 한 날짜의 row 생성 (1행 통합 — 빈 날 / 단일 / 다중 일정) =====
+    function buildDayRow(date, dayEvents, todayKey, weekdayKo) {
+      const dayOfWeek = date.getDay();
+      const isToday = (dayKeyOf(date) === todayKey);
+      const isEmpty = dayEvents.length === 0;
 
       const row = document.createElement('div');
       let rowClass = 'event';
+      if (isEmpty) rowClass += ' empty-day';
       if (isToday) rowClass += ' today';
       if (dayOfWeek === 6) rowClass += ' saturday';
       if (dayOfWeek === 0) rowClass += ' sunday';
@@ -494,28 +520,43 @@
       // 1) 날짜 박스
       const dateBox = document.createElement('div');
       dateBox.className = 'event-date';
-      dateBox.innerHTML = '<span class="day-num">' + startDate.getDate() + '</span>' + weekdayKo[dayOfWeek];
+      dateBox.innerHTML = '<span class="day-num">' + date.getDate() + '</span>' + weekdayKo[dayOfWeek];
 
-      // 2) 시간 박스
+      // 2) 시간 박스 (첫 일정의 시간)
       const timeBox = document.createElement('div');
       timeBox.className = 'event-time';
-      if (isAllDay) {
-        timeBox.textContent = '종일';
-      } else {
-        const sh = String(startDate.getHours()).padStart(2, '0');
-        const sm = String(startDate.getMinutes()).padStart(2, '0');
-        timeBox.textContent = sh + ':' + sm;
+      if (!isEmpty) {
+        timeBox.textContent = formatEventTime(dayEvents[0]);
       }
 
-      // 3) 제목 + (선택)장소
+      // 3) 제목 박스 (모든 일정을 / 로 구분)
       const titleBox = document.createElement('div');
       titleBox.className = 'event-title';
-      titleBox.textContent = ev.summary || '(제목 없음)';
-      if (ev.location) {
-        const locSpan = document.createElement('span');
-        locSpan.className = 'event-location';
-        locSpan.textContent = ' 📍 ' + ev.location;
-        titleBox.appendChild(locSpan);
+
+      if (!isEmpty) {
+        dayEvents.forEach((ev, idx) => {
+          if (idx > 0) {
+            // 구분자
+            const sep = document.createElement('span');
+            sep.className = 'event-sep';
+            sep.textContent = '/';
+            titleBox.appendChild(sep);
+            // 두 번째 일정부터 시간을 인라인 prefix로
+            const timePrefix = document.createElement('span');
+            timePrefix.className = 'event-inline-time';
+            timePrefix.textContent = formatEventTime(ev);
+            titleBox.appendChild(timePrefix);
+          }
+          // 제목 텍스트
+          titleBox.appendChild(document.createTextNode(ev.summary || '(제목 없음)'));
+          // 장소 (있으면)
+          if (ev.location) {
+            const locSpan = document.createElement('span');
+            locSpan.className = 'event-location';
+            locSpan.textContent = ' 📍 ' + ev.location;
+            titleBox.appendChild(locSpan);
+          }
+        });
       }
 
       row.appendChild(dateBox);
@@ -524,27 +565,26 @@
       return row;
     }
 
-    // ===== 렌더링 (해당 월의 모든 주를 섹션으로) =====
+    // ===== 렌더링 (해당 월의 모든 주, 모든 날) =====
     function renderEvents(events, year, month) {
       const listEl = document.getElementById('events-list');
       listEl.innerHTML = '';
 
       const today = new Date();
-      const todayKey = today.getFullYear() + '-' + (today.getMonth()+1) + '-' + today.getDate();
+      const todayKey = dayKeyOf(today);
       const weekdayKo = ['일', '월', '화', '수', '목', '금', '토'];
 
-      // 1) 이벤트들을 주별로 그룹화 (월요일 시작)
-      const groups = new Map();
+      // 1) 이벤트들을 날짜별로 그룹화
+      const eventsByDay = new Map();
       events.forEach((ev) => {
         const start = ev.start.dateTime || ev.start.date;
         const startDate = new Date(start);
-        const ws = getWeekStart(startDate);
-        const key = ws.getTime();
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(ev);
+        const k = dayKeyOf(startDate);
+        if (!eventsByDay.has(k)) eventsByDay.set(k, []);
+        eventsByDay.get(k).push(ev);
       });
 
-      // 2) 해당 월의 모든 주 (빈 주 포함) 순회
+      // 2) 해당 월의 모든 주 (5월이면 5개) 순회
       const allWeeks = getAllWeeksInMonth(year, month);
 
       allWeeks.forEach((weekStart) => {
@@ -559,16 +599,12 @@
         const eventsBox = document.createElement('div');
         eventsBox.className = 'week-events';
 
-        const weekEvents = groups.get(weekStart.getTime()) || [];
-        if (weekEvents.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'event-empty';
-          empty.textContent = '—';
-          eventsBox.appendChild(empty);
-        } else {
-          weekEvents.forEach((ev) => {
-            eventsBox.appendChild(buildEventRow(ev, todayKey, weekdayKo));
-          });
+        // 3) 그 주의 7일을 모두 순회 (월~일) — 모든 날 1행씩
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(weekStart);
+          date.setDate(date.getDate() + i);
+          const dayEvents = eventsByDay.get(dayKeyOf(date)) || [];
+          eventsBox.appendChild(buildDayRow(date, dayEvents, todayKey, weekdayKo));
         }
 
         section.appendChild(eventsBox);
