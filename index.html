@@ -119,7 +119,21 @@
       color: #dc2626;
     }
 
-    .events-list {
+    .week-section {
+      margin-bottom: 14px;
+    }
+
+    .week-header {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      padding-left: 4px;
+    }
+
+    .week-events {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -128,11 +142,13 @@
 
     .event {
       display: grid;
-      grid-template-columns: 80px 1fr;
-      gap: 16px;
-      padding: 16px 20px;
+      grid-template-columns: 56px 90px 1fr;
+      gap: 12px;
+      padding: 8px 16px;
       border-bottom: 1px solid var(--border);
-      align-items: start;
+      align-items: center;
+      font-size: 13px;
+      min-height: 38px;
     }
 
     .event:last-child { border-bottom: none; }
@@ -156,17 +172,17 @@
     }
 
     .event-date {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--text-muted);
       font-weight: 500;
+      white-space: nowrap;
     }
 
     .event-date .day-num {
-      display: block;
-      font-size: 22px;
+      font-size: 14px;
       font-weight: 600;
       color: var(--text);
-      line-height: 1.1;
+      margin-right: 4px;
     }
 
     .event.today .event-date .day-num {
@@ -187,26 +203,33 @@
       color: var(--accent);
     }
 
-    .event-body {
-      min-width: 0;
+    .event-time {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .event-title {
-      font-size: 15px;
-      font-weight: 500;
-      margin-bottom: 4px;
-      word-wrap: break-word;
-    }
-
-    .event-time {
       font-size: 13px;
-      color: var(--text-muted);
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .event-location {
-      font-size: 13px;
+      font-size: 11px;
       color: var(--text-muted);
-      margin-top: 2px;
+      margin-left: 6px;
+      font-weight: 400;
+    }
+
+    .event-empty {
+      padding: 10px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
     }
 
     .empty {
@@ -269,7 +292,7 @@
         <button id="btn-this-month" class="active">이번달</button>
         <button id="btn-next-month">다음달</button>
       </div>
-      <div id="events-list" class="events-list"></div>
+      <div id="events-list"></div>
     </div>
 
     <div class="footer">
@@ -381,17 +404,24 @@
     async function loadEvents() {
       hideStatus();
       const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + currentMonthOffset; // 0-indexed, offset 적용
+      const baseYear = now.getFullYear();
+      const baseMonth = now.getMonth() + currentMonthOffset; // 0-indexed, offset 적용
 
-      // 해당 달 첫째 날 / 다음 달 첫째 날 (Date 객체가 자동으로 연도 넘김 처리)
-      const timeMin = new Date(year, month, 1).toISOString();
-      const timeMax = new Date(year, month + 1, 1).toISOString();
+      // 정규화된 연/월 (Date가 자동 처리: 12월+1 = 다음해 1월)
+      const targetDate = new Date(baseYear, baseMonth, 1);
+      const year = targetDate.getFullYear();
+      const month = targetDate.getMonth();
 
-      // 헤더에 월 표시 (실제 연/월 계산)
-      const targetDate = new Date(year, month, 1);
+      // 해당 월의 모든 주를 다 표시하므로, 조회 범위를 첫째 주의 월요일 ~ 마지막 주의 다음 월요일까지로 확장
+      const allWeeks = getAllWeeksInMonth(year, month);
+      const timeMin = allWeeks[0].toISOString();
+      const lastWeekEnd = new Date(allWeeks[allWeeks.length - 1]);
+      lastWeekEnd.setDate(lastWeekEnd.getDate() + 7);
+      const timeMax = lastWeekEnd.toISOString();
+
+      // 헤더에 월 표시
       document.getElementById('monthLabel').textContent =
-        targetDate.getFullYear() + '년 ' + (targetDate.getMonth() + 1) + '월';
+        year + '년 ' + (month + 1) + '월';
 
       let events;
       try {
@@ -410,81 +440,139 @@
         return;
       }
 
-      renderEvents(events);
+      renderEvents(events, year, month);
     }
 
-    // ===== 렌더링 =====
-    function renderEvents(events) {
+    // ===== 주별 그룹화 헬퍼 =====
+    function getWeekStart(date) {
+      // 월요일을 주의 시작으로
+      const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const day = d.getDay(); // 0=일, 1=월, ... 6=토
+      const offset = (day === 0) ? -6 : -(day - 1);
+      d.setDate(d.getDate() + offset);
+      return d;
+    }
+
+    function getAllWeeksInMonth(year, month) {
+      // 해당 월의 모든 주 시작일(월요일) 리스트
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0); // 해당 월 마지막 날
+      const weeks = [];
+      const cursor = getWeekStart(firstDay);
+      while (cursor <= lastDay) {
+        weeks.push(new Date(cursor));
+        cursor.setDate(cursor.getDate() + 7);
+      }
+      return weeks;
+    }
+
+    function formatWeekHeader(weekStart) {
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      return (weekStart.getMonth() + 1) + '월 ' + weekStart.getDate() + '일'
+           + ' — '
+           + (weekEnd.getMonth() + 1) + '월 ' + weekEnd.getDate() + '일';
+    }
+
+    // ===== 단일 이벤트 row 생성 (컴팩트 3-컬럼) =====
+    function buildEventRow(ev, todayKey, weekdayKo) {
+      const start = ev.start.dateTime || ev.start.date;
+      const isAllDay = !ev.start.dateTime;
+      const startDate = new Date(start);
+
+      const dayKey = startDate.getFullYear() + '-' + (startDate.getMonth()+1) + '-' + startDate.getDate();
+      const isToday = (dayKey === todayKey);
+      const dayOfWeek = startDate.getDay();
+
+      const row = document.createElement('div');
+      let rowClass = 'event';
+      if (isToday) rowClass += ' today';
+      if (dayOfWeek === 6) rowClass += ' saturday';
+      if (dayOfWeek === 0) rowClass += ' sunday';
+      row.className = rowClass;
+
+      // 1) 날짜 박스
+      const dateBox = document.createElement('div');
+      dateBox.className = 'event-date';
+      dateBox.innerHTML = '<span class="day-num">' + startDate.getDate() + '</span>' + weekdayKo[dayOfWeek];
+
+      // 2) 시간 박스
+      const timeBox = document.createElement('div');
+      timeBox.className = 'event-time';
+      if (isAllDay) {
+        timeBox.textContent = '종일';
+      } else {
+        const sh = String(startDate.getHours()).padStart(2, '0');
+        const sm = String(startDate.getMinutes()).padStart(2, '0');
+        timeBox.textContent = sh + ':' + sm;
+      }
+
+      // 3) 제목 + (선택)장소
+      const titleBox = document.createElement('div');
+      titleBox.className = 'event-title';
+      titleBox.textContent = ev.summary || '(제목 없음)';
+      if (ev.location) {
+        const locSpan = document.createElement('span');
+        locSpan.className = 'event-location';
+        locSpan.textContent = ' 📍 ' + ev.location;
+        titleBox.appendChild(locSpan);
+      }
+
+      row.appendChild(dateBox);
+      row.appendChild(timeBox);
+      row.appendChild(titleBox);
+      return row;
+    }
+
+    // ===== 렌더링 (해당 월의 모든 주를 섹션으로) =====
+    function renderEvents(events, year, month) {
       const listEl = document.getElementById('events-list');
       listEl.innerHTML = '';
 
-      if (events.length === 0) {
-        listEl.innerHTML = '<div class="empty">이번 달에 등록된 일정이 없습니다.</div>';
-        return;
-      }
-
       const today = new Date();
       const todayKey = today.getFullYear() + '-' + (today.getMonth()+1) + '-' + today.getDate();
-
       const weekdayKo = ['일', '월', '화', '수', '목', '금', '토'];
 
+      // 1) 이벤트들을 주별로 그룹화 (월요일 시작)
+      const groups = new Map();
       events.forEach((ev) => {
-        // start.dateTime 또는 start.date (종일 일정)
         const start = ev.start.dateTime || ev.start.date;
-        const end = ev.end.dateTime || ev.end.date;
-        const isAllDay = !ev.start.dateTime;
-
         const startDate = new Date(start);
-        const dayKey = startDate.getFullYear() + '-' + (startDate.getMonth()+1) + '-' + startDate.getDate();
-        const isToday = (dayKey === todayKey);
+        const ws = getWeekStart(startDate);
+        const key = ws.getTime();
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(ev);
+      });
 
-        const row = document.createElement('div');
-        const dayOfWeek = startDate.getDay();
-        let rowClass = 'event';
-        if (isToday) rowClass += ' today';
-        if (dayOfWeek === 6) rowClass += ' saturday';
-        if (dayOfWeek === 0) rowClass += ' sunday';
-        row.className = rowClass;
+      // 2) 해당 월의 모든 주 (빈 주 포함) 순회
+      const allWeeks = getAllWeeksInMonth(year, month);
 
-        const dayNum = startDate.getDate();
-        const wd = weekdayKo[startDate.getDay()];
+      allWeeks.forEach((weekStart) => {
+        const section = document.createElement('div');
+        section.className = 'week-section';
 
-        const dateBox = document.createElement('div');
-        dateBox.className = 'event-date';
-        dateBox.innerHTML = '<span class="day-num">' + dayNum + '</span>' + wd + '요일';
+        const header = document.createElement('div');
+        header.className = 'week-header';
+        header.textContent = formatWeekHeader(weekStart);
+        section.appendChild(header);
 
-        const body = document.createElement('div');
-        body.className = 'event-body';
+        const eventsBox = document.createElement('div');
+        eventsBox.className = 'week-events';
 
-        const title = document.createElement('div');
-        title.className = 'event-title';
-        title.textContent = ev.summary || '(제목 없음)';
-        body.appendChild(title);
-
-        const time = document.createElement('div');
-        time.className = 'event-time';
-        if (isAllDay) {
-          time.textContent = '종일';
+        const weekEvents = groups.get(weekStart.getTime()) || [];
+        if (weekEvents.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'event-empty';
+          empty.textContent = '—';
+          eventsBox.appendChild(empty);
         } else {
-          const sh = String(startDate.getHours()).padStart(2, '0');
-          const sm = String(startDate.getMinutes()).padStart(2, '0');
-          const endDate = new Date(end);
-          const eh = String(endDate.getHours()).padStart(2, '0');
-          const em = String(endDate.getMinutes()).padStart(2, '0');
-          time.textContent = sh + ':' + sm + ' – ' + eh + ':' + em;
-        }
-        body.appendChild(time);
-
-        if (ev.location) {
-          const loc = document.createElement('div');
-          loc.className = 'event-location';
-          loc.textContent = '📍 ' + ev.location;
-          body.appendChild(loc);
+          weekEvents.forEach((ev) => {
+            eventsBox.appendChild(buildEventRow(ev, todayKey, weekdayKo));
+          });
         }
 
-        row.appendChild(dateBox);
-        row.appendChild(body);
-        listEl.appendChild(row);
+        section.appendChild(eventsBox);
+        listEl.appendChild(section);
       });
     }
 
