@@ -105,6 +105,14 @@
       border-color: var(--accent);
     }
 
+    .month-toggle button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      background: var(--surface);
+      color: var(--text-muted);
+      border-color: var(--border);
+    }
+
     .status {
       padding: 16px;
       background: var(--accent-soft);
@@ -303,6 +311,7 @@
 
     <div id="events-area" style="display:none;">
       <div class="month-toggle">
+        <button id="btn-prev-month">이전달</button>
         <button id="btn-this-month" class="active">이번달</button>
         <button id="btn-next-month">다음달</button>
       </div>
@@ -393,6 +402,8 @@
       document.getElementById('events-list').innerHTML = '';
       // 버튼 상태 초기화
       currentMonthOffset = 0;
+      document.getElementById('btn-prev-month').classList.remove('active');
+      document.getElementById('btn-prev-month').disabled = false;
       document.getElementById('btn-this-month').classList.add('active');
       document.getElementById('btn-next-month').classList.remove('active');
       hideStatus();
@@ -401,17 +412,33 @@
     // ===== 일정 로드 =====
     let currentMonthOffset = 0; // 0=이번달, 1=다음달
 
+    document.getElementById('btn-prev-month').addEventListener('click', () => {
+      const newOffset = currentMonthOffset - 1;
+      // 같은 연도 1월까지만 허용 (작년 이전은 차단)
+      const now = new Date();
+      const target = new Date(now.getFullYear(), now.getMonth() + newOffset, 1);
+      if (target.getFullYear() < now.getFullYear()) return;
+      setActiveMonth(newOffset);
+    });
     document.getElementById('btn-this-month').addEventListener('click', () => {
       setActiveMonth(0);
     });
     document.getElementById('btn-next-month').addEventListener('click', () => {
-      setActiveMonth(1);
+      setActiveMonth(currentMonthOffset + 1);
     });
 
     function setActiveMonth(offset) {
       currentMonthOffset = offset;
+      document.getElementById('btn-prev-month').classList.toggle('active', offset < 0);
       document.getElementById('btn-this-month').classList.toggle('active', offset === 0);
-      document.getElementById('btn-next-month').classList.toggle('active', offset === 1);
+      document.getElementById('btn-next-month').classList.toggle('active', offset > 0);
+
+      // 이전달 버튼 disabled 처리: 다음 step이 작년이 되면 비활성화
+      const now = new Date();
+      const nextPrev = new Date(now.getFullYear(), now.getMonth() + offset - 1, 1);
+      document.getElementById('btn-prev-month').disabled =
+        (nextPrev.getFullYear() < now.getFullYear());
+
       loadEvents();
     }
 
